@@ -91,9 +91,9 @@ _PLATFORM_DEFAULTS: dict[str, dict[str, Any]] = {
     "mattermost":      _TIER_MEDIUM,
     "matrix":          _TIER_MEDIUM,
     "feishu":          _TIER_MEDIUM,
+    "signal":          _TIER_MEDIUM,  # Signal editTimestamp support via signal-cli
 
     # Tier 3 — no edit support, progress messages are permanent
-    "signal":          _TIER_LOW,
     "whatsapp":        _TIER_MEDIUM,  # Baileys bridge supports /edit
     "bluebubbles":     _TIER_LOW,
     "weixin":          _TIER_LOW,

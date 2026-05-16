@@ -947,8 +947,14 @@ class SignalAdapter(BasePlatformAdapter):
         content: str,
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        edit_timestamp: Optional[int] = None,
     ) -> SendResult:
-        """Send a text message with native Signal formatting."""
+        """Send a text message with native Signal formatting.
+
+        Args:
+            edit_timestamp: If provided, edit the message with this timestamp (ms since epoch).
+                            Signal uses editTimestamp for message editing.
+        """
         await self._stop_typing_indicator(chat_id)
 
         plain_text, text_styles = self._markdown_to_signal(content)
@@ -964,6 +970,10 @@ class SignalAdapter(BasePlatformAdapter):
             else:
                 params["textStyles"] = text_styles
 
+        # Support message editing via editTimestamp
+        if edit_timestamp is not None:
+            params["editTimestamp"] = edit_timestamp
+
         if chat_id.startswith("group:"):
             params["groupId"] = chat_id[6:]
         else:
@@ -973,10 +983,10 @@ class SignalAdapter(BasePlatformAdapter):
 
         if result is not None:
             self._track_sent_timestamp(result)
-            # Signal has no editable message identifier. Returning None keeps the
-            # stream consumer on the non-edit fallback path instead of pretending
-            # future edits can remove an in-progress cursor from the chat thread.
-            return SendResult(success=True, message_id=None)
+            # Return the timestamp as message_id for future edits
+            # Signal timestamps are milliseconds since epoch, stored as strings
+            msg_ts = result.get("timestamp")
+            return SendResult(success=True, message_id=str(msg_ts) if msg_ts else None)
         return SendResult(success=False, error="RPC send failed")
 
     def _track_sent_timestamp(self, rpc_result) -> None:
@@ -986,6 +996,44 @@ class SignalAdapter(BasePlatformAdapter):
             self._recent_sent_timestamps.add(ts)
             if len(self._recent_sent_timestamps) > self._max_recent_timestamps:
                 self._recent_sent_timestamps.pop()
+
+    async def edit_message(
+        self,
+        chat_id: str,
+        message_id: str,
+        content: str,
+        *,
+        finalize: bool = False,
+    ) -> SendResult:
+        """Edit a previously sent message using Signal's editTimestamp parameter.
+
+        Signal message IDs are timestamps (milliseconds since epoch) stored as strings.
+        We convert them to integers and pass them as editTimestamp to the send RPC.
+        """
+        try:
+            # Convert timestamp string back to integer for editTimestamp
+            edit_ts = int(message_id)
+        except (ValueError, TypeError):
+            logger.warning(
+                f"[Signal] edit_message: invalid message_id '{message_id}', "
+                f"expected timestamp string"
+            )
+            return SendResult(success=False, error="Invalid message ID format")
+
+        logger.debug(
+            f"[Signal] edit_message: chat_id={chat_id} message_id={message_id} "
+            f"edit_ts={edit_ts} finalize={finalize}"
+        )
+
+        # Re-use send() with editTimestamp parameter
+        result = await self.send(chat_id, content, edit_timestamp=edit_ts)
+
+        if result.success:
+            logger.debug(f"[Signal] edit_message result: success=True")
+        else:
+            logger.warning(f"[Signal] edit_message result: success=False error={result.error}")
+
+        return result
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         """Send a typing indicator.
