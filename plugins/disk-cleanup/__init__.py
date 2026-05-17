@@ -129,6 +129,7 @@ def _on_post_tool_call(
     tool_name: str = "",
     args: Optional[Dict[str, Any]] = None,
     result: Any = None,
+    error: Any = None,
     task_id: str = "",
     session_id: str = "",
     tool_call_id: str = "",
